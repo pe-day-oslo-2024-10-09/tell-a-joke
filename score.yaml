@@ -1,0 +1,23 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: jokes
+containers:
+  jotd:
+    image: .
+    variables:
+      MESSAGE: Hello World!
+service:
+  ports:
+    www:
+      port: 3000
+      targetPort: 3000
+resources:
+  jotd-dns:
+    type: dns
+    id: app-dns
+  jotd-route:
+    type: route
+    params:
+      path: /
+      port: 3000
+      host: ${resources.jotd-dns.host}
