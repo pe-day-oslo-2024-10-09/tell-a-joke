@@ -10,23 +10,60 @@ permissions:
 env:
   ENVIRONMENT_ID: 'development'
   HUMCTL_VERSION: 0.30.3
+  AWS_REGION: us-west-2
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v3
+
+      - name: Set ENV variables
+        run: |
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY#$GITHUB_REPOSITORY_OWNER/}" >> $GITHUB_ENV
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: login to aws ecr
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: create repo if not existing
+        id: create-repo
+        uses: int128/create-ecr-repository-action@v1
+        with:
+          repository: ${{ env.IMAGE_NAME }}
+
+      - name: "set CONTAINER_REGISTRY env var"
+        run: |
+          echo "CONTAINER_REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+
       - name: Build and Push to Humanitec
         id: build-push
         uses: humanitec/build-push-to-humanitec@v1
         with:
           humanitec-token: ${{ secrets.HUMANITEC_TOKEN }}
           organization: ${{ vars.HUMANITEC_ORG }}
+          external-registry-url: ${{ steps.login-ecr.outputs.registry }}
+          image-name: ${{ env.IMAGE_NAME }}
+
       - name: Install humctl
         run: |
           wget https://github.com/humanitec/cli/releases/download/v${{ env.HUMCTL_VERSION }}/cli_${{ env.HUMCTL_VERSION }}_linux_amd64.tar.gz
           tar -xvf cli_${{ env.HUMCTL_VERSION }}_linux_amd64.tar.gz
           chmod +x humctl
           mv humctl /usr/local/bin
+    
       - name: Run Score
         run: |
           if ! [ -f score.yaml ]
